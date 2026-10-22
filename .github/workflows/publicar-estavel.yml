@@ -1,0 +1,97 @@
+name: Publicar Sai Capeta estavel
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'release/version.json'
+      - 'release/trigger.txt'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: saicapeta-release
+  cancel-in-progress: false
+
+jobs:
+  publicar-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar projeto e scripts
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extrair fonte Android aprovada
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fonte
+          unzip -q Sai-Capeta-projeto.zip -d fonte
+          test -f fonte/SaiCapeta/app/build.gradle
+
+      - name: Aplicar melhorias aprovadas e atualizar numero da versao
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/corrigir-ativacao.py fonte/SaiCapeta
+          python3 scripts/importar-contatos-lote.py fonte/SaiCapeta
+          python3 scripts/release/prepare_stable.py fonte/SaiCapeta
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -n 1)"
+          fi
+          test -n "$SDKMANAGER" && test -x "$SDKMANAGER"
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Preparar criptografia de assinatura
+        run: python3 -m pip install --disable-pip-version-check cryptography
+
+      - name: Assinar release, verificar APK e gerar manifesto
+        env:
+          SAICAPETA_MASTER_KEY: ${{ secrets.SAICAPETA_MASTER_KEY }}
+        run: python3 scripts/release/build_signed.py fonte/SaiCapeta
+
+      - name: Armazenar copia do APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sai-Capeta-APK-estavel
+          path: Sai-Capeta-v*.apk
+          if-no-files-found: error
+
+      - name: Publicar atualizacao no GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v$(python3 -c 'import json;print(json.load(open("release/version.json"))["versionName"])')"
+          test -f "Sai-Capeta-$TAG.apk"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "A release $TAG ja existe. Nao sobrescrever APK assinado."
+            exit 1
+          fi
+          gh release create "$TAG" "Sai-Capeta-$TAG.apk" atualizacao.json \
+            --target main --title "Sai, Capeta! $TAG" \
+            --notes "Versao estavel assinada; atualizacoes no proprio aplicativo." --latest
