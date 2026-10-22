@@ -1,0 +1,53 @@
+name: Compilar Sai Capeta (ZIP)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Sai-Capeta-projeto.zip'
+      - '.github/workflows/compilar-zip.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  construir-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar arquivos do repositório
+        uses: actions/checkout@v4
+
+      - name: Extrair projeto Android
+        run: |
+          test -f Sai-Capeta-projeto.zip || { echo "Envie Sai-Capeta-projeto.zip para a raiz do repositório."; exit 1; }
+          mkdir -p fonte
+          unzip -q Sai-Capeta-projeto.zip -d fonte
+          test -f fonte/SaiCapeta/app/build.gradle || { echo "ZIP não contém o projeto esperado."; exit 1; }
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compilar APK de teste
+        run: gradle -p fonte/SaiCapeta :app:assembleDebug --no-daemon
+
+      - name: Salvar APK de teste
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sai-Capeta-APK-teste
+          path: fonte/SaiCapeta/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
