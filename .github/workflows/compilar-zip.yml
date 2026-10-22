@@ -8,6 +8,7 @@ on:
       - 'Sai-Capeta-projeto.zip'
       - '.github/workflows/compilar-zip.yml'
       - 'scripts/corrigir-ativacao.py'
+      - 'scripts/importar-contatos-lote.py'
 
 permissions:
   contents: read
@@ -28,6 +29,9 @@ jobs:
 
       - name: Aplicar correcoes de permissao e layout (v1.2.1)
         run: python3 scripts/corrigir-ativacao.py fonte/SaiCapeta
+
+      - name: Implementar importacao multipla e total de contatos
+        run: python3 scripts/importar-contatos-lote.py fonte/SaiCapeta
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
