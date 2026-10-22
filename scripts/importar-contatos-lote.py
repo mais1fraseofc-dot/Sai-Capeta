@@ -127,24 +127,27 @@ main.write_text(source,encoding="utf-8")
 
 data=rep(data,"import java.util.Calendar;","import java.util.Calendar;\nimport java.util.Collection;\nimport java.util.HashSet;\nimport java.util.Set;")
 store_methods=r'''    /** Insere varios numeros em uma unica gravacao. Nao remove bloqueios manuais. */
+    /** Padroniza DDD brasileiro com ou sem +55 para importar sem duplicar. */
+    private static String bulkKey(String n){
+        String digits=clean(n).replaceAll("\\D","");
+        if((digits.length()==12 || digits.length()==13) && digits.startsWith("55"))
+            digits=digits.substring(2);
+        return digits;
+    }
     public static synchronized int addMany(Context c,String which,Collection<String> rawNumbers){
         if(!"allow".equals(which) && !"deny".equals(which))return 0;
         if(rawNumbers==null || rawNumbers.isEmpty())return 0;
         List<String> saved=list(c,which);
         List<String> blocked=list(c,which.equals("allow")?"deny":"allow");
-        Set<String> seen=new HashSet<>(saved);
+        Set<String> seen=new HashSet<>(), excluded=new HashSet<>();
+        for(String entry:saved)seen.add(bulkKey(entry));
+        for(String entry:blocked)excluded.add(bulkKey(entry));
         int added=0;
         for(String raw:rawNumbers){
             String n=clean(raw);
-            if(n.replaceAll("\\D","").length()<8 || seen.contains(n))continue;
-            boolean conflict=false;
-            for(String deny:blocked)if(same(deny,n)){conflict=true;break;}
-            if(conflict)continue;
-            if(!saved.isEmpty() && !seen.contains(n)){
-                for(String previous:saved)if(same(previous,n)){conflict=true;break;}
-            }
-            if(conflict)continue;
-            saved.add(n);seen.add(n);added++;
+            String key=bulkKey(n);
+            if(key.length()<8 || seen.contains(key) || excluded.contains(key))continue;
+            saved.add(n);seen.add(key);added++;
         }
         if(added>0){
             JSONArray result=new JSONArray();for(String s:saved)result.put(s);
