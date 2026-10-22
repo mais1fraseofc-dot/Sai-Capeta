@@ -15,15 +15,15 @@ jobs:
   construir-apk:
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar arquivos do repositório
+      - name: Baixar arquivos do repositorio
         uses: actions/checkout@v4
 
       - name: Extrair projeto Android
         run: |
-          test -f Sai-Capeta-projeto.zip || { echo "Envie Sai-Capeta-projeto.zip para a raiz do repositório."; exit 1; }
+          test -f Sai-Capeta-projeto.zip || { echo "Arquivo ZIP nao encontrado."; exit 1; }
           mkdir -p fonte
           unzip -q Sai-Capeta-projeto.zip -d fonte
-          test -f fonte/SaiCapeta/app/build.gradle || { echo "ZIP não contém o projeto esperado."; exit 1; }
+          test -f fonte/SaiCapeta/app/build.gradle || { echo "Projeto Android nao encontrado dentro do ZIP."; exit 1; }
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -31,11 +31,20 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar Android SDK 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Instalar componentes Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -n 1)"
+          fi
+          test -n "$SDKMANAGER" && test -x "$SDKMANAGER"
+          "$SDKMANAGER" --version
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -43,7 +52,7 @@ jobs:
           gradle-version: '8.9'
 
       - name: Compilar APK de teste
-        run: gradle -p fonte/SaiCapeta :app:assembleDebug --no-daemon
+        run: gradle -p fonte/SaiCapeta :app:assembleDebug --no-daemon --stacktrace
 
       - name: Salvar APK de teste
         uses: actions/upload-artifact@v4
