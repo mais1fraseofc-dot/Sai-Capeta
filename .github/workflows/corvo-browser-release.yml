@@ -35,6 +35,10 @@ jobs:
         run: |
           mkdir -p ~/.android
           if [ ! -f ~/.android/debug.keystore ]; then
+            if [ -f corvo-publish/Corvo-Navegador.apk ]; then
+              echo '::error::Chave de assinatura do Corvo indisponível. Publicação bloqueada para impedir um APK incompatível.'
+              exit 1
+            fi
             keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Corvo Browser Beta,OU=Corvo,O=Personal App,C=BR'
           fi
       - name: Build signed Android application
