@@ -109,7 +109,8 @@ public abstract class BrowserActivity extends Activity {
         super.onStop();
         if(unlocked){
             unlocked=false;
-            if(current!=null) current.onPause();
+            if(fullView!=null)hideVideo();
+            if(current!=null)current.onPause();
             setContentView(lockedScreen);
         }
     }
@@ -156,13 +157,22 @@ public abstract class BrowserActivity extends Activity {
         }
     }
 
-    private Button btn(String s,Runnable callback){
+    private Button btn(String text,Runnable callback){
         Button b=new Button(this);
-        b.setText(s);b.setAllCaps(false);b.setTextColor(WHITE);
-        b.setTextSize(15);b.setMinWidth(0);b.setMinimumWidth(0);
-        b.setPadding(6,0,6,0);b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(BAR));
+        b.setText(text);b.setAllCaps(false);b.setTextColor(WHITE);
+        b.setTextSize(21);b.setTypeface(null,Typeface.BOLD);
+        b.setMinWidth(0);b.setMinimumWidth(0);
+        b.setMinHeight(0);b.setMinimumHeight(0);
+        b.setPadding(6,1,6,1);
+        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(BAR));
         b.setOnClickListener(v->callback.run());return b;
     }
+    private void addNav(LinearLayout nav,String glyph,String description,Runnable action){
+        Button b=btn(glyph,action);
+        b.setContentDescription(description);
+        nav.addView(b,new LinearLayout.LayoutParams(0,56,1f));
+    }
+    private int dp(float n){return (int)(getResources().getDisplayMetrics().density*n+0.5f);}
     private void buildUI(){
         layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setBackgroundColor(BG);
         LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setBackgroundColor(BAR);
@@ -171,20 +181,26 @@ public abstract class BrowserActivity extends Activity {
         address.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
         address.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
         address.setOnEditorActionListener((v,id,event)->{openAddress();return true;});
-        top.addView(address,new LinearLayout.LayoutParams(0,50,1));
-        top.addView(btn("IR",this::openAddress),new LinearLayout.LayoutParams(56,50));
+        top.addView(address,new LinearLayout.LayoutParams(0,dp(58),1f));
+        Button go=btn("IR",this::openAddress);go.setTextSize(16);
+        top.addView(go,new LinearLayout.LayoutParams(dp(66),dp(58)));
         layout.addView(top);
-        LinearLayout nav=new LinearLayout(this);nav.setBackgroundColor(BAR);
-        nav.addView(btn("◀",()->{if(current!=null && current.canGoBack())current.goBack();}));
-        nav.addView(btn("▶",()->{if(current!=null && current.canGoForward())current.goForward();}));
-        nav.addView(btn("⟳",()->{if(current!=null)current.reload();}));
-        nav.addView(btn("↓",this::findVideos));
-        nav.addView(btn("★",this::saveFavorite));
-        counter=new TextView(this);counter.setTextColor(BLUE);counter.setTextSize(17);
-        counter.setPadding(14,10,14,10);counter.setOnClickListener(v->showTabs());
-        nav.addView(counter);
-        nav.addView(btn("⋮",this::showMenu));
-        layout.addView(nav);
+        // Two rows of generously sized touch targets, without squeezing on narrow screens.
+        LinearLayout navA=new LinearLayout(this);navA.setBackgroundColor(BAR);
+        addNav(navA,"◀","Voltar",()->{if(current!=null&&current.canGoBack())current.goBack();});
+        addNav(navA,"▶","Avançar",()->{if(current!=null&&current.canGoForward())current.goForward();});
+        addNav(navA,"⟳","Atualizar página",()->{if(current!=null)current.reload();});
+        addNav(navA,"⌂","Página inicial",()->showHome(current));
+        layout.addView(navA);
+        LinearLayout navB=new LinearLayout(this);navB.setBackgroundColor(BAR);
+        addNav(navB,"↓","Detectar e baixar mídia",this::findVideos);
+        addNav(navB,"★","Salvar favorito",this::saveFavorite);
+        counter=new TextView(this);counter.setTextColor(BLUE);counter.setTextSize(21);
+        counter.setGravity(Gravity.CENTER);counter.setContentDescription("Abas abertas");
+        counter.setOnClickListener(v->showTabs());
+        navB.addView(counter,new LinearLayout.LayoutParams(0,dp(56),1f));
+        addNav(navB,"⋮","Menu do Corvo",this::showMenu);
+        layout.addView(navB);
         page=new FrameLayout(this);layout.addView(page,new LinearLayout.LayoutParams(-1,0,1));
         newTab(HOME);
     }
@@ -363,8 +379,12 @@ public abstract class BrowserActivity extends Activity {
                 fullView=view;customCallback=cb;fullscreen=new FrameLayout(BrowserActivity.this);
                 fullscreen.setBackgroundColor(Color.BLACK);
                 fullscreen.addView(view,new FrameLayout.LayoutParams(-1,-1));
-                setContentView(fullscreen);
+                // Keep the original WebView attached. Android video surfaces require this.
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                getWindow().addContentView(fullscreen,
+                    new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
                 getWindow().getDecorView().setSystemUiVisibility(5894|1024|512);
+                view.setKeepScreenOn(true);
             }
             @Override public void onHideCustomView(){hideVideo();}
             @Override public boolean onShowFileChooser(WebView w,ValueCallback<Uri[]> callback,FileChooserParams params){
@@ -541,11 +561,18 @@ public abstract class BrowserActivity extends Activity {
     }
     private void hideVideo(){
         if(fullView==null)return;
+        fullView.setKeepScreenOn(false);
         getWindow().getDecorView().setSystemUiVisibility(0);
-        if(fullscreen!=null)fullscreen.removeAllViews();
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        if(fullscreen!=null){
+            fullscreen.removeAllViews();
+            ViewGroup parent=(ViewGroup)fullscreen.getParent();
+            if(parent!=null)parent.removeView(fullscreen);
+        }
         fullView=null;fullscreen=null;
-        setContentView(layout);
-        if(customCallback!=null){customCallback.onCustomViewHidden();customCallback=null;}
+        WebChromeClient.CustomViewCallback cb=customCallback;
+        customCallback=null;
+        if(cb!=null)cb.onCustomViewHidden();
     }
     @Override protected void onActivityResult(int r,int code,Intent data){
         super.onActivityResult(r,code,data);
