@@ -260,6 +260,12 @@ public abstract class BrowserActivity extends Activity {
             }
             @Override public void onLoadResource(WebView view,String u){ trackMedia(u); }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
+                Uri req=request.getUrl();
+                if("corvo.home".equalsIgnoreCase(req.getHost()) && "/corvo_icon.webp".equals(req.getPath())){
+                    try{
+                        return new WebResourceResponse("image/webp",null,getAssets().open("corvo_icon.webp"));
+                    }catch(Exception e){return null;}
+                }
                 if(!blocked || request.isForMainFrame())return null;
                 try{
                     String site=pageDomains.get(view);
