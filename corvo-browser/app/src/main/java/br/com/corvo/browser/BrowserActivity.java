@@ -3,6 +3,10 @@ package br.com.corvo.browser;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.webkit.WebResourceError;
+import android.webkit.SslErrorHandler;
+import android.net.http.SslError;
+import android.os.Message;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -50,12 +54,17 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.WeakHashMap;
+import java.util.Map;
+import java.util.HashSet;
 
 public abstract class BrowserActivity extends Activity {
     abstract boolean privateMode();
     static final int BG=Color.rgb(8,13,24), BAR=Color.rgb(17,29,47), BLUE=Color.rgb(82,180,255), WHITE=Color.rgb(232,239,247);
     private final ArrayList<WebView> tabs=new ArrayList<>();
     private final LinkedHashSet<String> media=new LinkedHashSet<>();
+    private final Map<WebView,String> pageDomains=Collections.synchronizedMap(new WeakHashMap<>());
+    private boolean errorDialogVisible=false;
     private LinearLayout layout;
     private FrameLayout page;
     private EditText address;
@@ -193,13 +202,44 @@ public abstract class BrowserActivity extends Activity {
         }
         if(view==current && address!=null)address.setText("");
     }
-    private void newTab(String url){
-        if(tabs.size()>=15){toast("Limite de 15 abas");return;}
+    private void showPageError(WebView view,String url,String message){
+        if(view!=current || isHome(url) || isFinishing() || !unlocked || errorDialogVisible)return;
+        errorDialogVisible=true;
+        String site=pageDomains.get(view);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle("A página não carregou")
+            .setMessage(message+"\n\n"+url)
+            .setPositiveButton("Tentar novamente",(d,w)->view.reload())
+            .setNeutralButton("Sem bloqueador",(d,w)->{
+                if(site!=null){
+                    Set<String> exceptions=new HashSet<>(prefs.getStringSet("unblocked_sites",Collections.emptySet()));
+                    exceptions.add(site);
+                    prefs.edit().putStringSet("unblocked_sites",exceptions).apply();
+                }
+                view.reload();
+            })
+            .setNegativeButton("Fechar",null).create();
+        dialog.setOnDismissListener(d->errorDialogVisible=false);
+        dialog.show();
+    }
+    private void changeAdBlockForSite(){
+        if(current==null)return;
+        String site=pageDomains.get(current);
+        if(site==null || isHome(current.getUrl())){toast("Abra um site primeiro.");return;}
+        Set<String> exceptions=new HashSet<>(prefs.getStringSet("unblocked_sites",Collections.emptySet()));
+        if(exceptions.remove(site))toast("Bloqueador reativado neste site.");
+        else{exceptions.add(site);toast("Bloqueador desativado apenas neste site.");}
+        prefs.edit().putStringSet("unblocked_sites",exceptions).apply();
+        current.reload();
+    }
+    private WebView newTab(String url){
+        if(tabs.size()>=15){toast("Limite de 15 abas");return null;}
         WebView w=new WebView(this);
         WebSettings s=w.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setJavaScriptCanOpenWindowsAutomatically(false);
+        s.setSupportMultipleWindows(true);
         s.setSupportZoom(true);s.setBuiltInZoomControls(true);s.setDisplayZoomControls(false);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setAllowFileAccess(false);s.setAllowContentAccess(true);
@@ -209,24 +249,63 @@ public abstract class BrowserActivity extends Activity {
         w.setBackgroundColor(BG);
         w.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView view,String u,android.graphics.Bitmap favicon){
+                pageDomains.put(view,Uri.parse(u).getHost());
                 if(view==current){address.setText(isHome(u)?"":u);media.clear();}
             }
             @Override public void onPageFinished(WebView view,String u){
                 if(view==current)address.setText(isHome(u)?"":u);
-                if(!privateMode()&&u.startsWith("http")){
+                if(!privateMode()&&!isHome(u)&&u.startsWith("http")){
                     prefs.edit().putString("last_url",u).apply();
                 }
             }
             @Override public void onLoadResource(WebView view,String u){ trackMedia(u); }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
-                if(!blocked)return null;
+                if(!blocked || request.isForMainFrame())return null;
                 try{
+                    String site=pageDomains.get(view);
+                    if(site!=null && prefs.getStringSet("unblocked_sites",Collections.emptySet()).contains(site))return null;
                     String h=request.getUrl().getHost().toLowerCase(Locale.ROOT);
                     for(String ad:ADS) if(h.equals(ad)||h.endsWith("."+ad)){
                         return new WebResourceResponse("text/plain","utf-8",new ByteArrayInputStream(new byte[0]));
                     }
                 }catch(Exception ignored){}
                 return null;
+            }
+            @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
+                Uri uri=request.getUrl();
+                String scheme=uri.getScheme();
+                if(scheme==null || scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("about"))return false;
+                if(!request.isForMainFrame())return true;
+                try{
+                    Intent i;
+                    if(scheme.equalsIgnoreCase("intent")){
+                        i=Intent.parseUri(uri.toString(),Intent.URI_INTENT_SCHEME);
+                        i.setComponent(null);
+                        i.setSelector(null);
+                    } else i=new Intent(Intent.ACTION_VIEW,uri);
+                    i.addCategory(Intent.CATEGORY_BROWSABLE);
+                    startActivity(i);
+                }catch(Exception e){toast("Não foi possível abrir este link.");}
+                return true;
+            }
+            @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){
+                if(!request.isForMainFrame())return;
+                String url=request.getUrl().toString();
+                String details=String.valueOf(error.getDescription());
+                if(error.getErrorCode()==WebViewClient.ERROR_HOST_LOOKUP)details="O endereço do site não foi encontrado.";
+                if(error.getErrorCode()==WebViewClient.ERROR_CONNECT)details="Não foi possível conectar ao servidor.";
+                if(error.getErrorCode()==WebViewClient.ERROR_TIMEOUT)details="A conexão demorou demais.";
+                showPageError(view,url,details);
+            }
+            @Override public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response){
+                if(!request.isForMainFrame())return;
+                int code=response.getStatusCode();
+                if(code==403 || code==429 || code>=500)
+                    showPageError(view,request.getUrl().toString(),"O site respondeu HTTP "+code+". Pode estar indisponível ou restringir navegadores incorporados.");
+            }
+            @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,SslError error){
+                handler.cancel();
+                showPageError(view,error.getUrl(),"Certificado de segurança inválido. A conexão foi interrompida para proteger seus dados.");
             }
             @Override public boolean onRenderProcessGone(WebView view,RenderProcessGoneDetail detail){
                 tabs.remove(view);
@@ -237,6 +316,21 @@ public abstract class BrowserActivity extends Activity {
             }
         });
         w.setWebChromeClient(new WebChromeClient(){
+            @Override public boolean onCreateWindow(WebView src,boolean isDialog,boolean isUserGesture,Message message){
+                if(!isUserGesture)return false;
+                WebView tab=newTab(null);
+                if(tab==null)return false;
+                ((WebView.WebViewTransport)message.obj).setWebView(tab);
+                message.sendToTarget();
+                return true;
+            }
+            @Override public void onCloseWindow(WebView window){
+                if(!tabs.contains(window))return;
+                if(window==current){closeTab();return;}
+                tabs.remove(window);
+                window.destroy();
+                if(counter!=null)counter.setText("▣ "+tabs.size());
+            }
             @Override public void onProgressChanged(WebView v,int progress){
                 if(v==current && progress==100) address.setText(isHome(v.getUrl())?"":v.getUrl());
             }
@@ -265,7 +359,8 @@ public abstract class BrowserActivity extends Activity {
             }
         });
         tabs.add(w);switchTab(tabs.size()-1);
-        if(isHome(url))showHome(w);else w.loadUrl(url);
+        if(url!=null){if(isHome(url))showHome(w);else w.loadUrl(url);}
+        return w;
     }
     private void switchTab(int i){
         if(i<0||i>=tabs.size())return;
@@ -314,7 +409,7 @@ public abstract class BrowserActivity extends Activity {
         String[] opts={"+ Nova aba","Janela privada","Downloads do Android",
             "Favoritos","Histórico recente",
             blocked?"Desativar bloqueador":"Ativar bloqueador",
-            "Compartilhar página","Página inicial","Limpar dados","Verificar atualizações"};
+            "Compartilhar página","Página inicial","Limpar dados","Verificar atualizações","Bloqueador deste site"};
         new AlertDialog.Builder(this).setTitle("Corvo Navegador")
             .setItems(opts,(d,n)->{
                 switch(n){
@@ -339,6 +434,7 @@ public abstract class BrowserActivity extends Activity {
                             toast("Dados locais apagados");
                         }).setNegativeButton("Cancelar",null).show();break;
                     case 9:if(updater!=null)updater.check(true);else toast("Abra a janela principal para verificar atualizações");break;
+                    case 10:changeAdBlockForSite();break;
             }
             }).show();
     }
