@@ -2,6 +2,9 @@ name: Corvo Browser Release
 on:
   push:
     branches: [corvo-navegador-updates]
+  pull_request:
+    branches: [main]
+    paths: ['corvo-browser/**', '.github/workflows/corvo-browser-release.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -40,6 +43,7 @@ jobs:
       - name: Build signed Android application
         run: gradle -p corvo-browser assembleDebug --stacktrace
       - name: Publish latest version on dedicated branch
+        if: github.event_name == 'push'
         run: |
           mkdir -p corvo-publish
           cp corvo-browser/app/build/outputs/apk/debug/app-debug.apk corvo-publish/Corvo-Navegador.apk
