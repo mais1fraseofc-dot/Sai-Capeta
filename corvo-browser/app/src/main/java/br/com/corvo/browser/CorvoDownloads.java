@@ -13,6 +13,8 @@ import android.webkit.CookieManager;
 import android.webkit.MimeTypeMap;
 import android.webkit.URLUtil;
 import android.widget.Toast;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -36,6 +38,11 @@ public final class CorvoDownloads {
             }
             String filename=URLUtil.guessFileName(url,disposition,mime);
             if(filename==null||filename.isEmpty())filename="corvo-arquivo";
+            // Prevent ERROR_FILE_ALREADY_EXISTS on repeated downloads.
+            int lastDot=filename.lastIndexOf('.');
+            String base=lastDot>0?filename.substring(0,lastDot):filename;
+            String extension=lastDot>0?filename.substring(lastDot):"";
+            filename=base+"_"+System.currentTimeMillis()+extension;
             // DownloadManager preserves the original bytes. It does NOT convert
             // HTML pages, manifests or adaptive streams into playable movies.
             DownloadManager.Request request=new DownloadManager.Request(address);
@@ -148,7 +155,14 @@ public final class CorvoDownloads {
     }
     private void showItem(Item i){
         StringBuilder b=new StringBuilder(status(i));
-        if(i.size>0)b.append("\nTamanho: ").append(String.format(Locale.ROOT,"%.2f MB",i.size/1048576.0));
+        if(i.size>0){
+            b.append("\nTamanho: ").append(String.format(Locale.ROOT,"%.2f MB",i.size/1048576.0));
+            if(i.size<4096 && likelyVideo(i))b.append("\nAVISO: muito pequeno para um vídeo típico. Pode ser uma página, playlist ou download incompleto.");
+        }
+        if(i.status==DownloadManager.STATUS_SUCCESSFUL){
+            String fileType=inspectFile(i);
+            if(!fileType.isEmpty())b.append("\nVerificação: ").append(fileType);
+        }
         if(i.type!=null)b.append("\nFormato informado: ").append(i.type);
         if(i.url!=null)b.append("\nOrigem: ").append(i.url.length()>160?i.url.substring(0,160)+"…":i.url);
         AlertDialog.Builder d=new AlertDialog.Builder(activity).setTitle(i.name).setMessage(b.toString());
@@ -158,10 +172,51 @@ public final class CorvoDownloads {
         d.setNeutralButton("Downloads do Android",(dlg,w)->openAndroidDownloads())
             .setNegativeButton("Fechar",null).show();
     }
+    private boolean likelyVideo(Item i){
+        String name=i.name==null?"":i.name.toLowerCase(Locale.ROOT);
+        String type=i.type==null?"":i.type.toLowerCase(Locale.ROOT);
+        return type.startsWith("video/") ||
+               name.matches("(?s).*\.(mp4|webm|mov|mkv|avi|m4v)$");
+    }
+    private String inspectFile(Item item){
+        if(item.status!=DownloadManager.STATUS_SUCCESSFUL)return "";
+        try{
+            Uri uri=dm.getUriForDownloadedFile(item.id);
+            if(uri==null)return "Arquivo não encontrado";
+            try(InputStream in=activity.getContentResolver().openInputStream(uri)){
+                if(in==null)return "Arquivo inacessível";
+                byte[] data=new byte[128];
+                int length=in.read(data);
+                if(length<=0)return "Arquivo vazio";
+                String text=new String(data,0,length,StandardCharsets.UTF_8).trim().toLowerCase(Locale.ROOT);
+                if(text.startsWith("<!doctype html")||text.startsWith("<html")||
+                    text.startsWith("<?xml")||text.contains("<html"))
+                    return "HTML/XML recebido em vez do vídeo solicitado";
+                if(text.startsWith("#extm3u"))return "Playlist HLS (m3u8), não é vídeo completo";
+                if(length>=8&&data[4]=='f'&&data[5]=='t'&&data[6]=='y'&&data[7]=='p')
+                    return "Contêiner MP4 reconhecido";
+                if(length>=4&&(data[0]&0xff)==0x1a&&(data[1]&0xff)==0x45&&
+                   (data[2]&0xff)==0xdf&&(data[3]&0xff)==0xa3)
+                    return "Contêiner WebM/Matroska reconhecido";
+                if(length>=3&&(data[0]&0xff)==0x49&&(data[1]&0xff)==0x44&&(data[2]&0xff)==0x33)
+                    return "Arquivo de áudio MP3 reconhecido";
+                if(likelyVideo(item))return "Cabeçalho de vídeo não reconhecido; arquivo pode estar incompleto ou usar outro formato";
+                return "Arquivo disponível; formato não identificado automaticamente";
+            }
+        }catch(Exception e){return "Não foi possível verificar os primeiros bytes";}
+    }
     private void openItem(Item i){
         try{
             Uri content=dm.getUriForDownloadedFile(i.id);
             if(content==null){notifyUser("Arquivo não encontrado. Consulte Downloads.");return;}
+            String inspection=inspectFile(i);
+            if(inspection.startsWith("HTML/XML")||inspection.startsWith("Playlist HLS")||
+                inspection.startsWith("Arquivo vazio")){
+                new AlertDialog.Builder(activity).setTitle("Arquivo não é um vídeo reproduzível")
+                    .setMessage(inspection+"\n\nO servidor não forneceu um vídeo completo. Tente o download oficial do site ou um link direto de arquivo MP4/WebM.")
+                    .setPositiveButton("OK",null).show();
+                return;
+            }
             String type=i.type;
             if(type==null||type.isEmpty()||type.equals("application/octet-stream")){
                 String ext=MimeTypeMap.getFileExtensionFromUrl(i.name==null?"":i.name);
@@ -179,7 +234,7 @@ public final class CorvoDownloads {
                 .setNegativeButton("Fechar",null).show();
         }
     }
-    private void openAndroidDownloads(){
+    public void openAndroidDownloads(){
         try{activity.startActivity(new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS));}
         catch(Exception e){notifyUser("Não foi possível abrir a pasta Downloads.");}
     }
