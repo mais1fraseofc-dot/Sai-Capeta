@@ -39,6 +39,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 import org.json.JSONArray;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.net.URLEncoder;
 import java.net.URL;
 import java.util.ArrayList;
@@ -67,7 +70,8 @@ public abstract class BrowserActivity extends Activity {
     private CorvoUpdater updater;
     private CancellationSignal signal;
     private static final int FILE_REQUEST=108;
-    private static final String HOME="https://duckduckgo.com/";
+    private static final String HOME="about:blank";
+    private static final String HOME_BASE="https://corvo.home/";
     private static final String[] ADS={"doubleclick.net","googlesyndication.com","googleadservices.com",
         "adservice.google.com","adsystem.com","taboola.com","outbrain.com","popads.net",
         "popcash.net","propellerads.com","exoclick.com","trafficjunky.net","adnxs.com",
@@ -174,6 +178,21 @@ public abstract class BrowserActivity extends Activity {
         page=new FrameLayout(this);layout.addView(page,new LinearLayout.LayoutParams(-1,0,1));
         newTab(HOME);
     }
+    private boolean isHome(String url) {
+        return url!=null && (url.startsWith(HOME_BASE) || url.equals(HOME));
+    }
+    private void showHome(WebView view){
+        if(view==null)return;
+        try(InputStream in=getAssets().open("corvo_home.html")){
+            ByteArrayOutputStream data=new ByteArrayOutputStream();
+            byte[] b=new byte[8192];int n;
+            while((n=in.read(b))!=-1)data.write(b,0,n);
+            view.loadDataWithBaseURL(HOME_BASE,new String(data.toByteArray(),StandardCharsets.UTF_8),"text/html","UTF-8",null);
+        }catch(Exception e){
+            view.loadDataWithBaseURL(HOME_BASE,"<html><body style='background:#08101d;color:#e8f7ff;text-align:center;padding-top:35%'><h1>CORVO</h1><p>Navegador Particular</p></body></html>","text/html","UTF-8",null);
+        }
+        if(view==current && address!=null)address.setText("");
+    }
     private void newTab(String url){
         if(tabs.size()>=15){toast("Limite de 15 abas");return;}
         WebView w=new WebView(this);
@@ -190,10 +209,10 @@ public abstract class BrowserActivity extends Activity {
         w.setBackgroundColor(BG);
         w.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView view,String u,android.graphics.Bitmap favicon){
-                if(view==current){address.setText(u);media.clear();}
+                if(view==current){address.setText(isHome(u)?"":u);media.clear();}
             }
             @Override public void onPageFinished(WebView view,String u){
-                if(view==current)address.setText(u);
+                if(view==current)address.setText(isHome(u)?"":u);
                 if(!privateMode()&&u.startsWith("http")){
                     prefs.edit().putString("last_url",u).apply();
                 }
@@ -219,7 +238,7 @@ public abstract class BrowserActivity extends Activity {
         });
         w.setWebChromeClient(new WebChromeClient(){
             @Override public void onProgressChanged(WebView v,int progress){
-                if(v==current && progress==100) address.setText(v.getUrl());
+                if(v==current && progress==100) address.setText(isHome(v.getUrl())?"":v.getUrl());
             }
             @Override public void onShowCustomView(View view,CustomViewCallback cb){
                 if(fullView!=null){cb.onCustomViewHidden();return;}
@@ -245,14 +264,15 @@ public abstract class BrowserActivity extends Activity {
                 download(u,disposition,mime,agent);
             }
         });
-        tabs.add(w);switchTab(tabs.size()-1);w.loadUrl(url);
+        tabs.add(w);switchTab(tabs.size()-1);
+        if(isHome(url))showHome(w);else w.loadUrl(url);
     }
     private void switchTab(int i){
         if(i<0||i>=tabs.size())return;
         page.removeAllViews();current=tabs.get(i);
         ViewGroup p=(ViewGroup)current.getParent();if(p!=null)p.removeView(current);
         page.addView(current,new FrameLayout.LayoutParams(-1,-1));
-        address.setText(current.getUrl()==null?"":current.getUrl());
+        address.setText(isHome(current.getUrl())?"":(current.getUrl()==null?"":current.getUrl()));
         counter.setText("▣ "+tabs.size());
     }
     private void showTabs(){
@@ -282,7 +302,7 @@ public abstract class BrowserActivity extends Activity {
         if(!x.matches("(?i)^https?://.*")){
             if(x.matches("(?i)^[^\\s]+\\.[^\\s]+.*"))x="https://"+x;
             else{
-                try{x="https://duckduckgo.com/?q="+URLEncoder.encode(x,"UTF-8");}
+                try{x="https://www.google.com/search?q="+URLEncoder.encode(x,"UTF-8");}
                 catch(Exception e){return;}
             }
         }
@@ -310,7 +330,7 @@ public abstract class BrowserActivity extends Activity {
                         share.putExtra(Intent.EXTRA_TEXT,current.getUrl());
                         startActivity(Intent.createChooser(share,"Compartilhar"));}
                         break;
-                    case 7:if(current!=null)current.loadUrl(HOME);break;
+                    case 7:showHome(current);break;
                     case 8:new AlertDialog.Builder(this).setTitle("Apagar dados de navegação?")
                         .setPositiveButton("Limpar",(dd,nn)->{
                             for(WebView w:tabs){w.clearHistory();w.clearCache(true);}
@@ -324,7 +344,7 @@ public abstract class BrowserActivity extends Activity {
     }
     private void saveFavorite(){
         if(current==null)return;
-        String u=current.getUrl();if(u==null)return;
+        String u=current.getUrl();if(u==null || isHome(u)){toast("Abra um site para adicionar aos favoritos");return;}
         Set<String> s=new LinkedHashSet<>(prefs.getStringSet("bookmarks",Collections.emptySet()));
         s.add(u);prefs.edit().putStringSet("bookmarks",s).apply();toast("Favorito salvo");
     }
