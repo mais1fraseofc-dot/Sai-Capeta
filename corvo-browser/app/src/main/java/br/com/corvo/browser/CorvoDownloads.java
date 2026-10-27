@@ -113,7 +113,10 @@ public final class CorvoDownloads {
     }
     private String status(Item i){
         switch(i.status){
-            case DownloadManager.STATUS_SUCCESSFUL: return "Concluído";
+            case DownloadManager.STATUS_SUCCESSFUL:
+                if(i.type!=null&&i.type.toLowerCase(Locale.ROOT).contains("text/html"))
+                    return "Baixou uma página HTML, não um vídeo (site pode exigir login)";
+                return "Concluído";
             case DownloadManager.STATUS_PENDING: return "Na fila";
             case DownloadManager.STATUS_PAUSED: return "Pausado (motivo "+i.reason+")";
             case DownloadManager.STATUS_FAILED: return "Falhou (código "+i.reason+")";
