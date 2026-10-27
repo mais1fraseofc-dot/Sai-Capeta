@@ -243,7 +243,9 @@ public abstract class BrowserActivity extends Activity {
         addNav(nav,"◀","Voltar",()->{if(current!=null&&current.canGoBack())current.goBack();});
         addNav(nav,"▶","Avançar",()->{if(current!=null&&current.canGoForward())current.goForward();});
         addNav(nav,"⟳","Atualizar",()->{if(current!=null)current.reload();});
-        addNav(nav,"↓","Vídeos e downloads",this::findVideos);
+        addNav(nav,"⌂","Página inicial do Corvo",()->showHome(current));
+        TextView mediaButton=addNav(nav,"↓","Vídeos e downloads",this::findVideos);
+        mediaButton.setOnLongClickListener(v->{downloads.show();return true;});
         counter=addNav(nav,"▣ 1","Abas",this::showTabs);
         counter.setTextColor(BLUE);
         addNav(nav,"⋮","Menu do Corvo",this::showMenu);
@@ -638,6 +640,7 @@ public abstract class BrowserActivity extends Activity {
             }
             new AlertDialog.Builder(this).setTitle("Mídias detectadas ("+list.size()+")")
                 .setItems(labels,(d,i)->mediaOptions(list.get(i)))
+                .setNeutralButton("Meus downloads",(d,w)->downloads.show())
                 .setNegativeButton("Fechar",null).show();
         });
     }
