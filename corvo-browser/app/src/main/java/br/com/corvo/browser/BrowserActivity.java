@@ -541,8 +541,8 @@ public abstract class BrowserActivity extends Activity {
     private boolean isPlaylist(String u,String mime){
         String uLower=u==null?"":u.toLowerCase(Locale.ROOT);
         String type=mime==null?"":mime.toLowerCase(Locale.ROOT);
-        return uLower.matches("(?s).*\.m3u8(\?.*)?$") ||
-               uLower.matches("(?s).*\.mpd(\?.*)?$") ||
+        return uLower.matches("(?s).*\\.m3u8(\\?.*)?$") ||
+               uLower.matches("(?s).*\\.mpd(\\?.*)?$") ||
                type.contains("mpegurl") || type.contains("dash+xml");
     }
     private void playStreamExternally(String u){
