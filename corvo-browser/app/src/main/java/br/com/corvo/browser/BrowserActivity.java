@@ -383,7 +383,7 @@ public abstract class BrowserActivity extends Activity {
                 // Keep the original WebView attached. Android video surfaces require this.
                 getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
                 getWindow().addContentView(fullscreen,
-                    new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
+                    new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT,Gravity.CENTER));
                 getWindow().getDecorView().setSystemUiVisibility(5894|1024|512);
                 view.setKeepScreenOn(true);
             }
@@ -529,7 +529,9 @@ public abstract class BrowserActivity extends Activity {
             List<String> list=new ArrayList<>(all);
             String[] labels=new String[list.size()];
             for(int i=0;i<list.size();i++){
-                String s=list.get(i); labels[i]=s.length()>90?s.substring(0,90)+"…":s;
+                String s=list.get(i);
+                String type=isPlaylist(s,null)?"[TRANSMISSÃO HLS/DASH] ":"[ARQUIVO DIRETO] ";
+                labels[i]=type+(s.length()>75?s.substring(0,75)+"…":s);
             }
             new AlertDialog.Builder(this).setTitle("Mídias detectadas ("+list.size()+")")
                 .setItems(labels,(d,i)->mediaOptions(list.get(i)))
@@ -581,6 +583,7 @@ public abstract class BrowserActivity extends Activity {
             if(name==null||name.trim().isEmpty())name="corvo-download";
             DownloadManager.Request req=new DownloadManager.Request(Uri.parse(u));
             req.setTitle(name);
+            if(mime!=null&&!mime.trim().isEmpty())req.setMimeType(mime);
             req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
             req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,name);
             String cookies=CookieManager.getInstance().getCookie(u);
