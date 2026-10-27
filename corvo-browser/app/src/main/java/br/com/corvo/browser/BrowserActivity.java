@@ -72,6 +72,7 @@ public abstract class BrowserActivity extends Activity {
     private TextView counter;
     private WebView current;
     private boolean unlocked=false,authRunning=false,blocked=true;
+    private boolean captureProtection=false;
     private View lockedScreen,fullView;
     private FrameLayout fullscreen;
     private WebChromeClient.CustomViewCallback customCallback;
@@ -93,6 +94,7 @@ public abstract class BrowserActivity extends Activity {
         if(privateMode()) WebView.setDataDirectorySuffix("corvo_private");
         prefs=getSharedPreferences("corvo_prefs",MODE_PRIVATE);
         blocked=prefs.getBoolean("adblock",true);
+        captureProtection=prefs.getBoolean("capture_protection",false);
         if(!privateMode()) updater=new CorvoUpdater(this,prefs);
         TextView lock=new TextView(this);
         lock.setText("CORVO\n\nNAVEGADOR PARTICULAR\n\nUse sua impressão digital para entrar.");
@@ -108,6 +110,7 @@ public abstract class BrowserActivity extends Activity {
     @Override protected void onStop(){
         super.onStop();
         if(unlocked){
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
             unlocked=false;
             if(fullView!=null)hideVideo();
             if(current!=null)current.onPause();
@@ -136,6 +139,7 @@ public abstract class BrowserActivity extends Activity {
             prompt.authenticate(signal,getMainExecutor(),new BiometricPrompt.AuthenticationCallback(){
                 @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult r){
                     authRunning=false;unlocked=true;
+                    applyScreenCaptureSetting();
                     if(layout==null) buildUI();
                     setContentView(layout);
                     if(current!=null) current.onResume();
@@ -450,11 +454,19 @@ public abstract class BrowserActivity extends Activity {
         ((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(address.getWindowToken(),0);
         address.clearFocus();
     }
+    private void applyScreenCaptureSetting(){
+        if(captureProtection || !unlocked){
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        }else{
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        }
+    }
     private void showMenu(){
         String[] opts={"+ Nova aba","Janela privada","Downloads do Android",
             "Favoritos","Histórico recente",
             blocked?"Desativar bloqueador":"Ativar bloqueador",
-            "Compartilhar página","Página inicial","Limpar dados","Verificar atualizações","Bloqueador deste site"};
+            "Compartilhar página","Página inicial","Limpar dados","Verificar atualizações","Bloqueador deste site",
+            captureProtection?"Liberar capturas de tela":"Ativar proteção contra capturas"};
         new AlertDialog.Builder(this).setTitle("Corvo Navegador")
             .setItems(opts,(d,n)->{
                 switch(n){
@@ -480,6 +492,12 @@ public abstract class BrowserActivity extends Activity {
                         }).setNegativeButton("Cancelar",null).show();break;
                     case 9:if(updater!=null)updater.check(true);else toast("Abra a janela principal para verificar atualizações");break;
                     case 10:changeAdBlockForSite();break;
+                    case 11:
+                        captureProtection=!captureProtection;
+                        prefs.edit().putBoolean("capture_protection",captureProtection).apply();
+                        applyScreenCaptureSetting();
+                        toast(captureProtection?"Capturas bloqueadas":"Capturas liberadas para os testes");
+                        break;
             }
             }).show();
     }
