@@ -64,6 +64,7 @@ public abstract class BrowserActivity extends Activity {
     private final ArrayList<WebView> tabs=new ArrayList<>();
     private final LinkedHashSet<String> media=new LinkedHashSet<>();
     private final Map<WebView,String> pageDomains=Collections.synchronizedMap(new WeakHashMap<>());
+    private final Map<WebView,String> originalUserAgents=Collections.synchronizedMap(new WeakHashMap<>());
     private boolean errorDialogVisible=false;
     private final Set<String> wwwRetries=new HashSet<>();
     private LinearLayout layout;
@@ -310,6 +311,7 @@ public abstract class BrowserActivity extends Activity {
         if(tabs.size()>=15){toast("Limite de 15 abas");return null;}
         WebView w=new WebView(this);
         WebSettings s=w.getSettings();
+        originalUserAgents.put(w,s.getUserAgentString());
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setJavaScriptCanOpenWindowsAutomatically(false);
@@ -325,6 +327,7 @@ public abstract class BrowserActivity extends Activity {
         w.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView view,String u,android.graphics.Bitmap favicon){
                 pageDomains.put(view,Uri.parse(u).getHost());
+                if(!isHome(u) && configureSiteCompatibility(view,u))return;
                 if(view==current){address.setText(isHome(u)?"":u);media.clear();}
             }
             @Override public void onPageFinished(WebView view,String u){
@@ -500,12 +503,41 @@ public abstract class BrowserActivity extends Activity {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
         }
     }
+    private boolean configureSiteCompatibility(WebView view,String pageUrl){
+        try{
+            String domain=Uri.parse(pageUrl).getHost();
+            if(domain==null)return false;
+            String orig=originalUserAgents.get(view);
+            if(orig==null)return false;
+            boolean compat=prefs.getStringSet("chrome_compatible_sites",Collections.emptySet()).contains(domain);
+            String desired=compat?orig.replace("; wv","").replace("Version/4.0 ",""):orig;
+            if(!desired.equals(view.getSettings().getUserAgentString())){
+                view.getSettings().setUserAgentString(desired);
+                view.post(()->view.reload());
+                return true;
+            }
+        }catch(Exception ignored){}
+        return false;
+    }
+    private void toggleSiteCompatibility(){
+        if(current==null||isHome(current.getUrl())){toast("Abra um site para alterar a compatibilidade.");return;}
+        String host=Uri.parse(current.getUrl()).getHost();
+        if(host==null){toast("Endereço inválido.");return;}
+        Set<String> domains=new HashSet<>(prefs.getStringSet("chrome_compatible_sites",Collections.emptySet()));
+        boolean enabled=domains.add(host);
+        if(!enabled)domains.remove(host);
+        prefs.edit().putStringSet("chrome_compatible_sites",domains).apply();
+        // This only adjusts the browser identity. Site age/DRM rules still apply.
+        configureSiteCompatibility(current,current.getUrl());
+        toast(enabled?"Compatibilidade Chrome ativada":"Compatibilidade padrão restaurada");
+    }
     private void showMenu(){
         String[] opts={"+ Nova aba","Janela privada","Downloads do Android",
             "Favoritos","Histórico recente",
             blocked?"Desativar bloqueador":"Ativar bloqueador",
             "Compartilhar página","Página inicial","Limpar dados","Verificar atualizações","Bloqueador deste site",
-            captureProtection?"Liberar capturas de tela":"Ativar proteção contra capturas"};
+            captureProtection?"Liberar capturas de tela":"Ativar proteção contra capturas",
+            "Compatibilidade com sites (Chrome)","Adicionar esta página aos favoritos"};
         new AlertDialog.Builder(this).setTitle("Corvo Navegador")
             .setItems(opts,(d,n)->{
                 switch(n){
@@ -537,6 +569,8 @@ public abstract class BrowserActivity extends Activity {
                         applyScreenCaptureSetting();
                         toast(captureProtection?"Capturas bloqueadas":"Capturas liberadas para os testes");
                         break;
+                    case 12:toggleSiteCompatibility();break;
+                    case 13:saveFavorite();break;
             }
             }).show();
     }
