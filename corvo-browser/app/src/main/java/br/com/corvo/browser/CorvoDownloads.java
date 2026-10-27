@@ -176,7 +176,7 @@ public final class CorvoDownloads {
         String name=i.name==null?"":i.name.toLowerCase(Locale.ROOT);
         String type=i.type==null?"":i.type.toLowerCase(Locale.ROOT);
         return type.startsWith("video/") ||
-               name.matches("(?s).*\.(mp4|webm|mov|mkv|avi|m4v)$");
+               name.matches("(?s).*\\.(mp4|webm|mov|mkv|avi|m4v)$");
     }
     private String inspectFile(Item item){
         if(item.status!=DownloadManager.STATUS_SUCCESSFUL)return "";
