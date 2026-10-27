@@ -5,7 +5,7 @@
  <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
- <application android:label="Corvo Navegador" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="true" android:allowBackup="false">
+ <application android:icon="@drawable/ic_corvo" android:roundIcon="@drawable/ic_corvo" android:label="Corvo Navegador" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="true" android:allowBackup="false">
   <activity android:name=".PrivateActivity" android:process=":private" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden"/>
   <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
