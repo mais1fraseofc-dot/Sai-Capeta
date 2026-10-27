@@ -244,7 +244,7 @@ public abstract class BrowserActivity extends Activity {
         addNav(nav,"▶","Avançar",()->{if(current!=null&&current.canGoForward())current.goForward();});
         addNav(nav,"⟳","Atualizar",()->{if(current!=null)current.reload();});
         addNav(nav,"⌂","Página inicial do Corvo",()->showHome(current));
-        TextView mediaButton=addNav(nav,"↓","Vídeos e downloads",this::findVideos);
+        TextView mediaButton=addNav(nav,"↓","Vídeos e downloads",this::showDownloadActions);
         mediaButton.setOnLongClickListener(v->{downloads.show();return true;});
         counter=addNav(nav,"▣ 1","Abas",this::showTabs);
         counter.setTextColor(BLUE);
@@ -605,6 +605,21 @@ public abstract class BrowserActivity extends Activity {
         if(t.matches("(?s).*\\.(mp4|webm|m3u8|mp3|m4a|mov|mkv)(\\?.*)?$")){
             runOnUiThread(()->{if(media.size()<80)media.add(u);});
         }
+    }
+    private void showDownloadActions(){
+        final String[] choices={"Meus downloads do Corvo","Localizar arquivos na pasta Downloads",
+            "Procurar vídeos na página atual","Entender por que alguns vídeos não baixam"};
+        new AlertDialog.Builder(this).setTitle("Downloads do Corvo")
+            .setItems(choices,(d,i)->{
+                switch(i){
+                    case 0:downloads.show();break;
+                    case 1:downloads.openAndroidDownloads();break;
+                    case 2:findVideos();break;
+                    case 3:new AlertDialog.Builder(this).setTitle("Formatos de vídeo")
+                        .setMessage("Vídeos MP4/WebM completos podem ser baixados por links diretos. Arquivos HLS (.m3u8), DASH (.mpd), páginas HTML e transmissões protegidas não se tornam MP4 apenas com o botão de baixar. A disponibilidade depende do site.")
+                        .setPositiveButton("OK",null).show();break;
+                }
+            }).setNegativeButton("Fechar",null).show();
     }
     private void findVideos(){
         if(current==null)return;
