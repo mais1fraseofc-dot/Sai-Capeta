@@ -80,6 +80,7 @@ public abstract class BrowserActivity extends Activity {
     private ValueCallback<Uri[]> chooser;
     private SharedPreferences prefs;
     private CorvoUpdater updater;
+    private CorvoDownloads downloads;
     private CancellationSignal signal;
     private static final int FILE_REQUEST=108;
     private static final String HOME="about:blank";
@@ -97,6 +98,7 @@ public abstract class BrowserActivity extends Activity {
         blocked=prefs.getBoolean("adblock",true);
         captureProtection=prefs.getBoolean("capture_protection",false);
         if(!privateMode()) updater=new CorvoUpdater(this,prefs);
+        downloads=new CorvoDownloads(this,prefs);
         TextView lock=new TextView(this);
         lock.setText("CORVO\n\nNAVEGADOR PARTICULAR\n\nUse sua impressão digital para entrar.");
         lock.setTextColor(WHITE);lock.setTextSize(21);lock.setGravity(Gravity.CENTER);
@@ -532,7 +534,7 @@ public abstract class BrowserActivity extends Activity {
         toast(enabled?"Compatibilidade Chrome ativada":"Compatibilidade padrão restaurada");
     }
     private void showMenu(){
-        String[] opts={"+ Nova aba","Janela privada","Downloads do Android",
+        String[] opts={"+ Nova aba","Janela privada","Meus downloads",
             "Favoritos","Histórico recente",
             blocked?"Desativar bloqueador":"Ativar bloqueador",
             "Compartilhar página","Página inicial","Limpar dados","Verificar atualizações","Bloqueador deste site",
@@ -543,7 +545,7 @@ public abstract class BrowserActivity extends Activity {
                 switch(n){
                     case 0:newTab(HOME);break;
                     case 1:startActivity(new Intent(this,PrivateActivity.class));break;
-                    case 2:startActivity(new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS));break;
+                    case 2:downloads.show();break;
                     case 3:showFavorites();break;
                     case 4:if(!privateMode())showHistory();else toast("Modo privado");break;
                     case 5:blocked=!blocked;prefs.edit().putBoolean("adblock",blocked).apply();
@@ -614,9 +616,19 @@ public abstract class BrowserActivity extends Activity {
             try{JSONArray a=new JSONArray(result);for(int i=0;i<a.length();i++){
                 String u=a.optString(i);if(u.startsWith("https://")||u.startsWith("http://"))all.add(u);
             }}catch(Exception ignored){}
-            if(all.isEmpty()){new AlertDialog.Builder(this).setTitle("Procurar vídeos")
-                .setMessage("Nenhum endereço direto detectado. Inicie a reprodução e toque novamente em ↓.")
-                .setPositiveButton("OK",null).show();return;}
+            if(all.isEmpty()){
+                String host="";
+                try{host=Uri.parse(current.getUrl()).getHost();}catch(Exception ignored){}
+                boolean youtube=host!=null&&(host.equals("youtube.com")||host.endsWith(".youtube.com")||host.equals("youtu.be"));
+                String detail=youtube?
+                    "Este vídeo do YouTube está sendo transmitido pelo reprodutor, sem um endereço direto MP4 disponível ao Corvo. O botão ↓ não converte transmissões em arquivos. Use as opções de download oferecidas pelo próprio site, quando disponíveis.":
+                    "Nenhum MP4, WebM ou link HLS direto foi identificado nesta página. Alguns sites utilizam players com transmissões segmentadas ou protegidas. Inicie a reprodução e tente outra vez, ou utilize o download oferecido pelo site.";
+                new AlertDialog.Builder(this).setTitle("Vídeo sem arquivo direto")
+                    .setMessage(detail)
+                    .setPositiveButton("Meus downloads",(d,w)->downloads.show())
+                    .setNegativeButton("Fechar",null).show();
+                return;
+            }
             List<String> list=new ArrayList<>(all);
             String[] labels=new String[list.size()];
             for(int i=0;i<list.size();i++){
@@ -664,27 +676,12 @@ public abstract class BrowserActivity extends Activity {
             .setNegativeButton("Cancelar",null).show();
     }
     private void download(String u,String disposition,String mime,String agent){
-        try{
-            if(!u.startsWith("http")){toast("Este tipo de endereço não é baixável diretamente");return;}
-            if(isPlaylist(u,mime)){
-                mediaOptions(u);
-                return;
-            }
-            String name=URLUtil.guessFileName(u,disposition,mime);
-            if(name==null||name.trim().isEmpty())name="corvo-download";
-            DownloadManager.Request req=new DownloadManager.Request(Uri.parse(u));
-            req.setTitle(name);
-            if(mime!=null&&!mime.trim().isEmpty())req.setMimeType(mime);
-            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,name);
-            String cookies=CookieManager.getInstance().getCookie(u);
-            if(cookies!=null)req.addRequestHeader("Cookie",cookies);
-            if(agent!=null)req.addRequestHeader("User-Agent",agent);
-            if(current!=null&&current.getUrl()!=null)req.addRequestHeader("Referer",current.getUrl());
-            ((DownloadManager)getSystemService(DOWNLOAD_SERVICE)).enqueue(req);
-            toast("Download iniciado. Verifique o arquivo em Downloads.");
-        }catch(Exception e){new AlertDialog.Builder(this).setTitle("Download não iniciado")
-            .setMessage(e.getMessage()).setPositiveButton("OK",null).show();}
+        if(u==null || !(u.startsWith("https://")||u.startsWith("http://"))){
+            toast("Este endereço não é um arquivo HTTP que possa ser baixado.");return;
+        }
+        if(isPlaylist(u,mime)){mediaOptions(u);return;}
+        String referer=current==null?null:current.getUrl();
+        downloads.enqueue(u,disposition,mime,agent,referer);
     }
     private void hideVideo(){
         if(fullView==null)return;
