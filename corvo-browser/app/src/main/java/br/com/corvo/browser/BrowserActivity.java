@@ -170,7 +170,7 @@ public abstract class BrowserActivity extends Activity {
     private void addNav(LinearLayout nav,String glyph,String description,Runnable action){
         Button b=btn(glyph,action);
         b.setContentDescription(description);
-        nav.addView(b,new LinearLayout.LayoutParams(0,56,1f));
+        nav.addView(b,new LinearLayout.LayoutParams(0,dp(56),1f));
     }
     private int dp(float n){return (int)(getResources().getDisplayMetrics().density*n+0.5f);}
     private void buildUI(){
@@ -273,6 +273,7 @@ public abstract class BrowserActivity extends Activity {
         s.setSupportMultipleWindows(true);
         s.setSupportZoom(true);s.setBuiltInZoomControls(true);s.setDisplayZoomControls(false);
         s.setMediaPlaybackRequiresUserGesture(false);
+        w.setLayerType(View.LAYER_TYPE_HARDWARE,null);
         s.setAllowFileAccess(false);s.setAllowContentAccess(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         CookieManager.getInstance().setAcceptCookie(true);
@@ -535,8 +536,36 @@ public abstract class BrowserActivity extends Activity {
                 .setNegativeButton("Fechar",null).show();
         });
     }
+    private boolean isPlaylist(String u,String mime){
+        String uLower=u==null?"":u.toLowerCase(Locale.ROOT);
+        String type=mime==null?"":mime.toLowerCase(Locale.ROOT);
+        return uLower.matches("(?s).*\.m3u8(\?.*)?$") ||
+               uLower.matches("(?s).*\.mpd(\?.*)?$") ||
+               type.contains("mpegurl") || type.contains("dash+xml");
+    }
+    private void playStreamExternally(String u){
+        try{
+            Intent intent=new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(Uri.parse(u),u.toLowerCase(Locale.ROOT).contains(".mpd")?
+                "application/dash+xml":"application/vnd.apple.mpegurl");
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
+            startActivity(Intent.createChooser(intent,"Abrir transmissão com"));
+        }catch(Exception e){
+            new AlertDialog.Builder(this).setTitle("Reprodutor indisponível")
+                .setMessage("Não foi encontrado um reprodutor compatível com esta transmissão. O Corvo não converte playlists em MP4 nesta versão.")
+                .setPositiveButton("OK",null).show();
+        }
+    }
     private void mediaOptions(String u){
-        new AlertDialog.Builder(this).setTitle("Arquivo de mídia").setMessage(u)
+        if(isPlaylist(u,null)){
+            new AlertDialog.Builder(this).setTitle("Transmissão por segmentos")
+                .setMessage("Este endereço é uma playlist HLS/DASH, não um MP4 completo. Baixá-lo diretamente gera um arquivo que não reproduz o vídeo. Você pode abrir o fluxo em um reprodutor compatível.")
+                .setPositiveButton("Abrir fluxo",(d,w)->playStreamExternally(u))
+                .setNegativeButton("Cancelar",null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Arquivo de mídia")
+            .setMessage("Baixar arquivo direto (como MP4 ou WebM). A reprodução depende do formato, codecs e permissões do servidor.\n\n"+u)
             .setPositiveButton("Baixar",(d,w)->download(u,null,null,current==null?null:current.getSettings().getUserAgentString()))
             .setNeutralButton("Abrir",(d,w)->{if(current!=null)current.loadUrl(u);})
             .setNegativeButton("Cancelar",null).show();
@@ -544,6 +573,10 @@ public abstract class BrowserActivity extends Activity {
     private void download(String u,String disposition,String mime,String agent){
         try{
             if(!u.startsWith("http")){toast("Este tipo de endereço não é baixável diretamente");return;}
+            if(isPlaylist(u,mime)){
+                mediaOptions(u);
+                return;
+            }
             String name=URLUtil.guessFileName(u,disposition,mime);
             if(name==null||name.trim().isEmpty())name="corvo-download";
             DownloadManager.Request req=new DownloadManager.Request(Uri.parse(u));
@@ -555,7 +588,7 @@ public abstract class BrowserActivity extends Activity {
             if(agent!=null)req.addRequestHeader("User-Agent",agent);
             if(current!=null&&current.getUrl()!=null)req.addRequestHeader("Referer",current.getUrl());
             ((DownloadManager)getSystemService(DOWNLOAD_SERVICE)).enqueue(req);
-            toast("Download iniciado");
+            toast("Download iniciado. Verifique o arquivo em Downloads.");
         }catch(Exception e){new AlertDialog.Builder(this).setTitle("Download não iniciado")
             .setMessage(e.getMessage()).setPositiveButton("OK",null).show();}
     }
