@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
  namespace 'br.com.corvo.browser'
  compileSdk 35
- defaultConfig { applicationId 'br.com.corvo.browser'; minSdk 28; targetSdk 35; versionCode 6; versionName '0.6-beta' }
+ defaultConfig { applicationId 'br.com.corvo.browser'; minSdk 28; targetSdk 35; versionCode 7; versionName '0.7-beta' }
  signingConfigs {
    corvo {
      storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')
