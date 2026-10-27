@@ -171,41 +171,80 @@ public abstract class BrowserActivity extends Activity {
         b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(BAR));
         b.setOnClickListener(v->callback.run());return b;
     }
-    private void addNav(LinearLayout nav,String glyph,String description,Runnable action){
-        Button b=btn(glyph,action);
-        b.setContentDescription(description);
-        nav.addView(b,new LinearLayout.LayoutParams(0,dp(56),1f));
+    private TextView addNav(LinearLayout nav,String glyph,String description,Runnable action){
+        TextView control=new TextView(this);
+        control.setText(glyph);
+        control.setTextSize(23);
+        control.setTypeface(Typeface.DEFAULT,Typeface.NORMAL);
+        control.setTextColor(WHITE);
+        control.setGravity(Gravity.CENTER);
+        control.setContentDescription(description);
+        control.setMinimumHeight(dp(48));
+        control.setOnClickListener(v->action.run());
+        nav.addView(control,new LinearLayout.LayoutParams(0,dp(50),1f));
+        return control;
     }
     private int dp(float n){return (int)(getResources().getDisplayMetrics().density*n+0.5f);}
     private void buildUI(){
-        layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setBackgroundColor(BG);
-        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setBackgroundColor(BAR);
-        address=new EditText(this);address.setTextColor(WHITE);address.setHintTextColor(Color.LTGRAY);
-        address.setSingleLine(true);address.setHint("Pesquisar ou digitar URL");address.setSelectAllOnFocus(true);
+        layout=new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setBackgroundColor(BG);
+        // On Android 15 the content is drawn under the status/navigation bars by default.
+        // Use actual system insets instead of hard-coded padding.
+        if(android.os.Build.VERSION.SDK_INT>=30){
+            layout.setOnApplyWindowInsetsListener((v,insets)->{
+                android.graphics.Insets safe=insets.getInsets(
+                    android.view.WindowInsets.Type.systemBars() |
+                    android.view.WindowInsets.Type.displayCutout());
+                v.setPadding(0,safe.top,0,safe.bottom);
+                return insets;
+            });
+        }else{
+            layout.setFitsSystemWindows(true);
+        }
+        LinearLayout top=new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setBackgroundColor(BAR);
+        address=new EditText(this);
+        address.setTextColor(WHITE);
+        address.setHintTextColor(0xff94a9bc);
+        address.setTextSize(16);
+        address.setTypeface(Typeface.SANS_SERIF);
+        address.setGravity(Gravity.CENTER_VERTICAL);
+        address.setPadding(dp(12),0,dp(5),0);
+        address.setBackgroundColor(BAR);
+        address.setSingleLine(true);
+        address.setHint("Pesquisar ou digitar endereço");
+        address.setSelectAllOnFocus(true);
         address.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
         address.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
         address.setOnEditorActionListener((v,id,event)->{openAddress();return true;});
-        top.addView(address,new LinearLayout.LayoutParams(0,dp(58),1f));
-        Button go=btn("IR",this::openAddress);go.setTextSize(16);
-        top.addView(go,new LinearLayout.LayoutParams(dp(66),dp(58)));
+        top.addView(address,new LinearLayout.LayoutParams(0,dp(50),1f));
+        TextView go=new TextView(this);
+        go.setText("IR");
+        go.setTextColor(BLUE);
+        go.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        go.setGravity(Gravity.CENTER);
+        go.setTextSize(16);
+        go.setContentDescription("Abrir endereço");
+        go.setOnClickListener(v->openAddress());
+        top.addView(go,new LinearLayout.LayoutParams(dp(52),dp(50)));
         layout.addView(top);
-        // Two rows of generously sized touch targets, without squeezing on narrow screens.
-        LinearLayout navA=new LinearLayout(this);navA.setBackgroundColor(BAR);
-        addNav(navA,"◀","Voltar",()->{if(current!=null&&current.canGoBack())current.goBack();});
-        addNav(navA,"▶","Avançar",()->{if(current!=null&&current.canGoForward())current.goForward();});
-        addNav(navA,"⟳","Atualizar página",()->{if(current!=null)current.reload();});
-        addNav(navA,"⌂","Página inicial",()->showHome(current));
-        layout.addView(navA);
-        LinearLayout navB=new LinearLayout(this);navB.setBackgroundColor(BAR);
-        addNav(navB,"↓","Detectar e baixar mídia",this::findVideos);
-        addNav(navB,"★","Salvar favorito",this::saveFavorite);
-        counter=new TextView(this);counter.setTextColor(BLUE);counter.setTextSize(21);
-        counter.setGravity(Gravity.CENTER);counter.setContentDescription("Abas abertas");
-        counter.setOnClickListener(v->showTabs());
-        navB.addView(counter,new LinearLayout.LayoutParams(0,dp(56),1f));
-        addNav(navB,"⋮","Menu do Corvo",this::showMenu);
-        layout.addView(navB);
-        page=new FrameLayout(this);layout.addView(page,new LinearLayout.LayoutParams(-1,0,1));
+        page=new FrameLayout(this);
+        layout.addView(page,new LinearLayout.LayoutParams(-1,0,1f));
+        // One compact toolbar with clear 50dp touch targets. Other actions are in the menu.
+        LinearLayout nav=new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setBackgroundColor(BAR);
+        addNav(nav,"◀","Voltar",()->{if(current!=null&&current.canGoBack())current.goBack();});
+        addNav(nav,"▶","Avançar",()->{if(current!=null&&current.canGoForward())current.goForward();});
+        addNav(nav,"⟳","Atualizar",()->{if(current!=null)current.reload();});
+        addNav(nav,"↓","Vídeos e downloads",this::findVideos);
+        counter=addNav(nav,"▣ 1","Abas",this::showTabs);
+        counter.setTextColor(BLUE);
+        addNav(nav,"⋮","Menu do Corvo",this::showMenu);
+        layout.addView(nav);
         newTab(HOME);
     }
     private boolean isHome(String url) {
