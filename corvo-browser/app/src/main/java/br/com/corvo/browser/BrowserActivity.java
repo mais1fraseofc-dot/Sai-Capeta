@@ -65,6 +65,7 @@ public abstract class BrowserActivity extends Activity {
     private final LinkedHashSet<String> media=new LinkedHashSet<>();
     private final Map<WebView,String> pageDomains=Collections.synchronizedMap(new WeakHashMap<>());
     private boolean errorDialogVisible=false;
+    private final Set<String> wwwRetries=new HashSet<>();
     private LinearLayout layout;
     private FrameLayout page;
     private EditText address;
@@ -202,6 +203,20 @@ public abstract class BrowserActivity extends Activity {
         }
         if(view==current && address!=null)address.setText("");
     }
+    private boolean retryWithWww(WebView view,Uri url){
+        try{
+            if(view!=current || url==null || !"https".equalsIgnoreCase(url.getScheme()))return false;
+            String host=url.getHost();
+            if(host==null || host.startsWith("www.") || host.equals("localhost") ||
+               !host.contains(".") || host.contains(":") || Character.isDigit(host.charAt(0)))return false;
+            String source=url.toString();
+            if(wwwRetries.size()>100)wwwRetries.clear();
+            if(!wwwRetries.add(source))return false;
+            Uri alternative=url.buildUpon().authority("www."+host+(url.getPort()>0?":"+url.getPort():"")).build();
+            view.loadUrl(alternative.toString());
+            return true;
+        }catch(Exception e){return false;}
+    }
     private void showPageError(WebView view,String url,String message){
         if(view!=current || isHome(url) || isFinishing() || !unlocked || errorDialogVisible)return;
         errorDialogVisible=true;
@@ -297,6 +312,9 @@ public abstract class BrowserActivity extends Activity {
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){
                 if(!request.isForMainFrame())return;
                 String url=request.getUrl().toString();
+                int code=error.getErrorCode();
+                if((code==WebViewClient.ERROR_HOST_LOOKUP || code==WebViewClient.ERROR_CONNECT)
+                    && retryWithWww(view,request.getUrl()))return;
                 String details=String.valueOf(error.getDescription());
                 if(error.getErrorCode()==WebViewClient.ERROR_HOST_LOOKUP)details="O endereço do site não foi encontrado.";
                 if(error.getErrorCode()==WebViewClient.ERROR_CONNECT)details="Não foi possível conectar ao servidor.";
