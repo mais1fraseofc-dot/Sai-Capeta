@@ -2,9 +2,6 @@ name: Corvo Browser Release
 on:
   push:
     branches: [corvo-navegador-updates]
-  pull_request:
-    branches: [main]
-    paths: ['corvo-browser/**', '.github/workflows/corvo-browser-release.yml']
   workflow_dispatch:
 permissions:
   contents: write
